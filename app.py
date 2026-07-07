@@ -296,7 +296,50 @@ with tab_mnt:
                                  (a_date, a_veh.split(" ")[0], a_driver, a_loc, a_detail, a_damage_self))
                     conn.commit(); conn.close()
                     st.success("✅ บันทึกรายงานอุบัติเหตุ (แบบ 5) เรียบร้อยแล้วครับ")
-                    
+with tab_rep:
+    st.subheader("บันทึกผลการใช้ การซ่อมบำรุงและสภาพของยานพาหนะ (แบบ 8)")
+    
+    # ส่วนสำหรับเลือกเดือน/ปี ที่ต้องการพิมพ์
+    col_p1, col_p2 = st.columns(2)
+    with col_p1:
+        rep_month = st.selectbox("เลือกเดือน", ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."])
+    with col_p2:
+        rep_year = st.text_input("พ.ศ.", value="2569")
+
+    conn = sqlite3.connect('irrigation_fleet.db')
+    
+    # Query ดึงข้อมูลมาแสดงตามฟอร์มแบบ 8
+    # รวมข้อมูลจากตารางการใช้งาน และการซ่อมบำรุง
+    query = '''
+        SELECT 
+            u.vehicle_id as เลขหมาย, 
+            v.vehicle_type as ชื่อรถ, 
+            v.vehicle_category as ประเภท, 
+            u.total as รวมระยะทาง_หรือเวลา, 
+            u.fuel_added as เชื้อเพลิง_ดีเซล,
+            m.cost as ค่าซ่อมบำรุง,
+            "1.ใช้การได้" as สภาพรถ
+        FROM Usage_Logs u 
+        LEFT JOIN Vehicles v ON u.vehicle_id = v.vehicle_id
+        LEFT JOIN Maintenance_Logs m ON u.vehicle_id = m.vehicle_id
+    '''
+    df_report = pd.read_sql_query(query, conn)
+    conn.close()
+
+    if not df_report.empty:
+        st.dataframe(df_report, use_container_width=True)
+        
+        # ฟังก์ชันสั่งพิมพ์เฉพาะส่วนตาราง
+        if st.button("🖨️ สั่งพิมพ์รายงานแบบ 8"):
+            st.markdown("""
+                <script>
+                // ซ่อนปุ่มและเมนู Streamlit ก่อนพิมพ์
+                window.print();
+                </script>
+            """, unsafe_allow_html=True)
+            st.info("ระบบเปิดหน้าต่างพิมพ์แล้ว หากไม่แสดงผลกรุณาตรวจสอบการตั้งค่าเบราว์เซอร์")
+    else:
+        st.info("ยังไม่มีข้อมูลสำหรับออกรายงาน")                    
 
 # --- แท็บตรวจมลพิษ (แบบ 9) ---
 with tab_pol:
