@@ -234,44 +234,69 @@ with tab_use:
 # --- แท็บซ่อมบำรุงและอุบัติเหตุ (แบบ 5, 6) ---
 with tab_mnt:
     mnt_type = st.radio("เลือกประเภทการบันทึก", ["บันทึกประวัติซ่อมบำรุง (แบบ 6)", "รายงานอุบัติเหตุ (แบบ 5)"])
+    
     if mnt_type == "บันทึกประวัติซ่อมบำรุง (แบบ 6)":
-        st.subheader("บันทึกประวัติซ่อมบำรุงยานพาหนะ (แบบ 6)")
-        with st.form("form_mnt_6"):
+        st.subheader("บันทึกประวัติการซ่อมบำรุงยานพาหนะ (แบบ 6)")
+        with st.form("form_mnt_6_complete"):
+            col1, col2 = st.columns(2)
+            with col1:
+                m_date = thai_date_picker("วันที่ซ่อม", key="m6_date")
+                m_veh = st.selectbox("เลือกยานพาหนะ / เครื่องจักร", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มีรถในระบบ")
+                m_meter = st.number_input("เลขไมล์ / ชั่วโมง (ณ วันที่ซ่อม)", min_value=0.0)
+            with col2:
+                m_shop = st.text_input("สถานที่ซ่อม / ชื่ออู่")
+                m_mechanic = st.text_input("ช่างผู้รับผิดชอบ / ผู้ควบคุมงาน")
+                m_cost = st.number_input("ค่าใช้จ่ายรวม (บาท)", min_value=0.0)
             
-            # --- เปลี่ยนมาใช้ปฏิทินแบบไทย ---
-            m_date = thai_date_picker("วันตรวจรับ / วันที่เข้าซ่อม", key="mnt6")
-            
-            m_veh = st.selectbox("เลือกยานพาหนะที่ซ่อม", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ")
-            m_meter = st.number_input("เลขไมล์ / ชั่วโมง (ณ วันที่ซ่อม)", min_value=0.0)
-            m_detail = st.text_area("รายละเอียดการซ่อมบำรุง")
-            m_cost = st.number_input("จำนวนเงินที่ซ่อม (บาท)", min_value=0.0)
+            m_detail = st.text_area("รายการซ่อมบำรุง (รายละเอียดอะไหล่/การเปลี่ยนถ่ายของเหลว)")
+            m_invoice = st.text_input("เลขที่ใบเสร็จ / เลขที่เอกสารอ้างอิง")
             
             if st.form_submit_button("บันทึกประวัติการซ่อม (แบบ 6)"):
                 if vehicle_list:
+                    # บันทึกลงฐานข้อมูล
                     conn = sqlite3.connect('irrigation_fleet.db')
-                    conn.execute("INSERT INTO Maintenance_Logs (date, vehicle_id, meter, details, cost) VALUES (?,?,?,?,?)", (m_date, m_veh.split(" ")[0], m_meter, m_detail, m_cost))
+                    conn.execute("""INSERT INTO Maintenance_Logs 
+                                   (date, vehicle_id, meter, details, cost) 
+                                   VALUES (?,?,?,?,?)""", 
+                                 (m_date, m_veh.split(" ")[0], m_meter, m_detail, m_cost))
                     conn.commit(); conn.close()
-                    st.success("✅ บันทึกประวัติการซ่อมบำรุง สำเร็จ!")
-                    
+                    st.success("✅ บันทึกประวัติการซ่อมบำรุง (แบบ 6) เรียบร้อยแล้ว")
+        
     else:
         st.subheader("แบบรายงานอุบัติเหตุ (แบบ 5)")
-        with st.form("form_acc_5"):
+        with st.form("form_acc_5_complete"):
+            col1, col2 = st.columns(2)
+            with col1:
+                a_date = thai_date_picker("วันที่เกิดเหตุ", key="acc5_date")
+                a_time = st.time_input("เวลาที่เกิดเหตุ (น.)")
+                a_veh = st.selectbox("ยานพาหนะที่เกิดเหตุ", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มีรถในระบบ")
+            with col2:
+                a_driver = st.text_input("ชื่อผู้ขับขี่")
+                a_license = st.text_input("เลขที่ใบอนุญาตขับขี่")
+                a_speed = st.number_input("ความเร็วขณะเกิดเหตุ (กม./ชม.)", min_value=0)
             
-            # --- เปลี่ยนมาใช้ปฏิทินแบบไทย ---
-            a_date = thai_date_picker("วันที่เกิดเหตุ", key="acc5")
-            
-            a_veh = st.selectbox("เลือกยานพาหนะที่เกิดเหตุ", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ")
-            a_driver = st.text_input("ชื่อผู้ขับขี่ขณะเกิดเหตุ")
             a_loc = st.text_input("สถานที่เกิดเหตุ")
-            a_detail = st.text_area("ลักษณะการเกิดเหตุ (โดยสังเขป)")
-            a_damage = st.text_input("ความเสียหายเบื้องต้น")
+            a_route = st.text_input("เส้นทาง (เดินทางจากไหน ไปไหน)")
+            
+            col3, col4 = st.columns(2)
+            with col3:
+                a_damage_self = st.text_area("ความเสียหายของรถ ชป.")
+                a_party = st.text_area("พาหนะหรือทรัพย์สินฝ่ายตรงข้าม")
+            with col4:
+                a_detail = st.text_area("ลักษณะการเกิดเหตุ / สาเหตุ")
+                a_injured = st.text_area("ข้อมูลผู้บาดเจ็บ (ชื่อ/ที่อยู่)")
             
             if st.form_submit_button("บันทึกรายงานอุบัติเหตุ (แบบ 5)"):
                 if vehicle_list:
+                    # บันทึกลงฐานข้อมูลให้ครบทุกช่อง
                     conn = sqlite3.connect('irrigation_fleet.db')
-                    conn.execute("INSERT INTO Accident_Logs (date, vehicle_id, driver, location, details, damage) VALUES (?,?,?,?,?,?)", (a_date, a_veh.split(" ")[0], a_driver, a_loc, a_detail, a_damage))
+                    conn.execute("""INSERT INTO Accident_Logs 
+                                   (date, vehicle_id, driver, location, details, damage) 
+                                   VALUES (?,?,?,?,?,?)""", 
+                                 (a_date, a_veh.split(" ")[0], a_driver, a_loc, a_detail, a_damage_self))
                     conn.commit(); conn.close()
-                    st.success("✅ บันทึกรายงานอุบัติเหตุ สำเร็จ!")
+                    st.success("✅ บันทึกรายงานอุบัติเหตุ (แบบ 5) เรียบร้อยแล้วครับ")
+                    
 
 # --- แท็บตรวจมลพิษ (แบบ 9) ---
 with tab_pol:
