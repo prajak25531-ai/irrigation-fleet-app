@@ -66,7 +66,45 @@ tab_req, tab_use, tab_mnt, tab_pol, tab_rep, tab_set = st.tabs([
 ])
 
 # --- แท็บตั้งค่า (แบบ 1, 2, 7) ---
+# --- แก้ไขแท็บตั้งค่า (แบบ 2) ให้มีช่องกรอกครบตามฟอร์ม ---
 with tab_set:
+    st.subheader("บัญชีรายการประเภทยานพาหนะส่วนกลาง (แบบ 2)")
+    with st.form("add_vehicle_form_v2"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            v_id = st.text_input("หมายเลข ชป.")
+            v_plate = st.text_input("หมายเลขทะเบียน")
+            v_type = st.text_input("ชื่อยานพาหนะ")
+        with col2:
+            v_category = st.text_input("ประเภทยานพาหนะ")
+            v_model = st.text_input("รุ่นปี")
+            v_cc = st.number_input("ขนาด (ซีซี)", min_value=0)
+            v_dept = st.text_input("รหัสสังกัด")
+        with col3:
+            v_price = st.number_input("ราคา", min_value=0.0)
+            v_buy_year = st.text_input("ปีที่ซื้อ")
+            v_acquire = st.text_input("หลักฐานการได้มา (วดป./เลขโอน)")
+            v_dispose = st.text_input("หลักฐานการจำหน่าย (ถ้ามี)")
+
+        if st.form_submit_button("บันทึกข้อมูลแบบ 2"):
+            conn = sqlite3.connect('irrigation_fleet.db')
+            # เพิ่มตารางนี้ใน init_db ด้วยนะครับถ้ายังไม่มี
+            conn.execute('''CREATE TABLE IF NOT EXISTS Vehicles_V2 
+                           (id INTEGER PRIMARY KEY, v_id TEXT, v_plate TEXT, v_type TEXT, 
+                            v_cat TEXT, v_model TEXT, v_cc INTEGER, v_dept TEXT, 
+                            v_price REAL, v_buy_year TEXT, v_acquire TEXT, v_dispose TEXT)''')
+            conn.execute("INSERT INTO Vehicles_V2 (v_id, v_plate, v_type, v_cat, v_model, v_cc, v_dept, v_price, v_buy_year, v_acquire, v_dispose) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                         (v_id, v_plate, v_type, v_category, v_model, v_cc, v_dept, v_price, v_buy_year, v_acquire, v_dispose))
+            conn.commit(); conn.close()
+            st.success("บันทึกข้อมูลแบบ 2 ครบถ้วนแล้วครับ")
+    
+    # ปุ่มสำหรับสั่งพิมพ์ (เปิดหน้าต่างพิมพ์)
+    if st.button("พิมพ์รายงานแบบ 2"):
+        st.write("ระบบกำลังเตรียมหน้าฟอร์มสำหรับสั่งพิมพ์...")
+        st.markdown("""
+            <script>window.print();</script>
+        """, unsafe_allow_html=True)
+        
     st.subheader("➕ บัญชีรายการประเภทยานพาหนะ (แบบ 1, 2 และ 7)")
     with st.form("add_vehicle"):
         col1, col2 = st.columns(2)
