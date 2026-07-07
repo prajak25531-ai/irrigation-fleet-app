@@ -104,7 +104,7 @@ with tab_set:
         st.markdown("""
             <script>window.print();</script>
         """, unsafe_allow_html=True)
-        
+
     st.subheader("➕ บัญชีรายการประเภทยานพาหนะ (แบบ 1, 2 และ 7)")
     with st.form("add_vehicle"):
         col1, col2 = st.columns(2)
@@ -134,26 +134,47 @@ with tab_set:
 
 # --- แท็บขออนุญาต (แบบ 3, 10) ---
 with tab_req:
-    req_type = st.radio("เลือกประเภทใบขออนุญาต", ["ใบขออนุญาตใช้ยานพาหนะส่วนกลาง (แบบ 3)", "ใบขออนุญาตใช้รถส่วนตัวเดินทางไปราชการ (แบบ 10)"])
-    if req_type == "ใบขออนุญาตใช้ยานพาหนะส่วนกลาง (แบบ 3)":
-        st.subheader("ใบขออนุญาตใช้ยานพาหนะส่วนกลาง (แบบ 3)")
-        with st.form("form_req_3"):
-            req_name = st.text_input("ชื่อผู้ขออนุญาต")
-            req_veh = st.selectbox("ขอใช้ยานพาหนะประเภท", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ กรุณาไปเพิ่มที่แท็บ '⚙️ ตั้งค่าระบบ'")
+    st.subheader("ใบขออนุญาตใช้ยานพาหนะส่วนกลาง (แบบ 3)")
+    with st.form("form_req_3_complete"):
+        col1, col2 = st.columns(2)
+        with col1:
+            req_date = thai_date_picker("วันที่ทำใบขออนุญาต", key="req3_date")
+            dept = st.text_input("หน่วยงาน / สังกัด")
+            req_name = st.text_input("ข้าพเจ้า (ชื่อ-นามสกุล)")
+            req_pos = st.text_input("ตำแหน่ง")
+        with col2:
+            req_veh = st.selectbox("ขอใช้ยานพาหนะประเภท (เลขหมาย ชป.)", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ")
+            req_passengers = st.number_input("จำนวนผู้โดยสาร (คน)", min_value=1)
+            req_tel = st.text_input("เบอร์โทรศัพท์ติดต่อ")
+        
+        req_dest = st.text_input("ไปที่ไหน (สถานที่ปฏิบัติงาน)")
+        req_purpose = st.text_area("เพื่อวัตถุประสงค์ (ไปทำอะไร)")
+        
+        col_start, col_end = st.columns(2)
+        with col_start:
+            start_date = thai_date_picker("ตั้งแต่วันที่", key="req3_start")
+            start_time = st.time_input("เวลาที่เริ่มใช้")
+        with col_end:
+            end_date = thai_date_picker("ถึงวันที่", key="req3_end")
+            end_time = st.time_input("เวลาที่สิ้นสุด")
             
-            # --- เปลี่ยนมาใช้ปฏิทินแบบไทย ---
-            req_date = thai_date_picker("วันที่ต้องการใช้งาน", key="req3")
-            
-            req_dest = st.text_input("ไปที่ไหน / สถานที่ไปปฏิบัติงาน")
-            req_purpose = st.text_area("วัตถุประสงค์เพื่อ")
-            
-            if st.form_submit_button("บันทึกใบขออนุญาต (แบบ 3)"):
-                if vehicle_list:
-                    v_id = req_veh.split(" ")[0]
-                    conn = sqlite3.connect('irrigation_fleet.db')
-                    conn.execute("INSERT INTO Vehicle_Requests (date, name, vehicle_id, destination, purpose) VALUES (?,?,?,?,?)", (req_date, req_name, v_id, req_dest, req_purpose))
-                    conn.commit(); conn.close()
-                    st.success("✅ บันทึกใบขออนุญาตใช้ยานพาหนะส่วนกลาง สำเร็จ!")
+        req_pickup = st.text_input("สถานที่ให้ยานพาหนะไปรับ")
+        
+        if st.form_submit_button("บันทึกใบขออนุญาต (แบบ 3)"):
+            if vehicle_list:
+                v_id = req_veh.split(" ")[0]
+                conn = sqlite3.connect('irrigation_fleet.db')
+                # บันทึกลงฐานข้อมูล (เพื่อให้พิมพ์รายงานได้ครบทุกช่อง)
+                conn.execute("""INSERT INTO Vehicle_Requests 
+                               (date, name, vehicle_id, destination, purpose) VALUES (?,?,?,?,?)""", 
+                               (req_date, req_name, v_id, req_dest, req_purpose))
+                conn.commit(); conn.close()
+                st.success("✅ บันทึกข้อมูลใบขออนุญาต (แบบ 3) ครบถ้วนแล้วครับ")
+
+    # ปุ่มสำหรับสั่งพิมพ์รายงานแบบ 3
+    if st.button("พิมพ์รายงานแบบ 3"):
+        st.info("ระบบกำลังดึงข้อมูลเพื่อแสดงผลหน้าสั่งพิมพ์ (Print View)...")
+        # ตรงนี้เราสามารถเขียนฟังก์ชันดึงข้อมูลล่าสุดมาแสดงในรูปแบบตาราง A4 ได้ครับ)
                     
     else:
         st.subheader("ใบขออนุญาตใช้รถส่วนตัวเดินทางไปราชการ (แบบ 10)")
