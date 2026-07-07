@@ -4,17 +4,6 @@ import pandas as pd
 from datetime import datetime
 
 # ==========================================
-# ฟังก์ชันแปลงวันที่เป็นรูปแบบภาษาไทย (พ.ศ.)
-# ==========================================
-def get_thai_date(date_obj):
-    thai_months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", 
-                   "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."]
-    day = date_obj.day
-    month = thai_months[date_obj.month - 1]
-    year = date_obj.year + 543
-    return f"{day} {month} {year}"
-
-# ==========================================
 # 1. โครงสร้างฐานข้อมูลหลัก
 # ==========================================
 def init_db():
@@ -36,6 +25,27 @@ def get_options(query, column):
     df = pd.read_sql_query(query, conn)
     conn.close()
     return df[column].tolist()
+
+# ==========================================
+# ฟังก์ชันพิเศษ: สร้างกล่องเลือกวันที่แบบไทย (วัน/เดือน/ปี พ.ศ.)
+# ==========================================
+def thai_date_picker(label, key):
+    st.markdown(f"**{label}**")
+    cols = st.columns([1, 1, 1]) # แบ่งเป็น 3 ช่องเท่าๆ กัน
+    today = datetime.today()
+    months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."]
+    
+    with cols[0]:
+        day = st.selectbox("วัน", range(1, 32), index=today.day-1, key=f"day_{key}")
+    with cols[1]:
+        month = st.selectbox("เดือน", months, index=today.month-1, key=f"month_{key}")
+    with cols[2]:
+        current_year_be = today.year + 543
+        # ให้เลือกย้อนหลังและล่วงหน้าได้ 5 ปี
+        years = list(range(current_year_be - 5, current_year_be + 6))
+        year = st.selectbox("ปี พ.ศ.", years, index=5, key=f"year_{key}")
+        
+    return f"{day} {month} {year}"
 
 # ==========================================
 # 2. ส่วนหน้าจอแอปพลิเคชัน
@@ -92,16 +102,18 @@ with tab_req:
         with st.form("form_req_3"):
             req_name = st.text_input("ชื่อผู้ขออนุญาต")
             req_veh = st.selectbox("ขอใช้ยานพาหนะประเภท", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ กรุณาไปเพิ่มที่แท็บ '⚙️ ตั้งค่าระบบ'")
-            req_date = st.date_input("วันที่ต้องการใช้งาน")
+            
+            # --- เปลี่ยนมาใช้ปฏิทินแบบไทย ---
+            req_date = thai_date_picker("วันที่ต้องการใช้งาน", key="req3")
+            
             req_dest = st.text_input("ไปที่ไหน / สถานที่ไปปฏิบัติงาน")
             req_purpose = st.text_area("วัตถุประสงค์เพื่อ")
             
             if st.form_submit_button("บันทึกใบขออนุญาต (แบบ 3)"):
                 if vehicle_list:
                     v_id = req_veh.split(" ")[0]
-                    thai_date = get_thai_date(req_date) # <--- แปลงเป็นวันที่ไทย
                     conn = sqlite3.connect('irrigation_fleet.db')
-                    conn.execute("INSERT INTO Vehicle_Requests (date, name, vehicle_id, destination, purpose) VALUES (?,?,?,?,?)", (thai_date, req_name, v_id, req_dest, req_purpose))
+                    conn.execute("INSERT INTO Vehicle_Requests (date, name, vehicle_id, destination, purpose) VALUES (?,?,?,?,?)", (req_date, req_name, v_id, req_dest, req_purpose))
                     conn.commit(); conn.close()
                     st.success("✅ บันทึกใบขออนุญาตใช้ยานพาหนะส่วนกลาง สำเร็จ!")
                     
@@ -110,14 +122,16 @@ with tab_req:
         with st.form("form_req_10"):
             req_name = st.text_input("ชื่อผู้ขออนุญาต")
             car_info = st.text_input("ข้อมูลรถส่วนตัว (ยี่ห้อ / หมายเลขทะเบียน)")
-            req_date = st.date_input("วันที่เดินทาง")
+            
+            # --- เปลี่ยนมาใช้ปฏิทินแบบไทย ---
+            req_date = thai_date_picker("วันที่เดินทาง", key="req10")
+            
             req_dest = st.text_input("สถานที่เดินทางไปราชการ")
             req_purpose = st.text_area("เหตุผลความจำเป็น")
             
             if st.form_submit_button("บันทึกใบขออนุญาต (แบบ 10)"):
-                thai_date = get_thai_date(req_date) # <--- แปลงเป็นวันที่ไทย
                 conn = sqlite3.connect('irrigation_fleet.db')
-                conn.execute("INSERT INTO Personal_Car_Requests (date, name, car_info, destination, purpose) VALUES (?,?,?,?,?)", (thai_date, req_name, car_info, req_dest, req_purpose))
+                conn.execute("INSERT INTO Personal_Car_Requests (date, name, car_info, destination, purpose) VALUES (?,?,?,?,?)", (req_date, req_name, car_info, req_dest, req_purpose))
                 conn.commit(); conn.close()
                 st.success("✅ บันทึกใบขออนุญาตใช้รถส่วนตัว สำเร็จ!")
 
@@ -125,7 +139,10 @@ with tab_req:
 with tab_use:
     st.subheader("สมุดบันทึกการใช้รถยนต์ ชป. (แบบ 4)")
     with st.form("form_use_4"):
-        use_date = st.date_input("วันที่ปฏิบัติงาน")
+        
+        # --- เปลี่ยนมาใช้ปฏิทินแบบไทย ---
+        use_date = thai_date_picker("วันที่ปฏิบัติงาน", key="use4")
+        
         use_veh = st.selectbox("เลือกยานพาหนะ / เครื่องจักรกล", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ")
         driver = st.text_input("ชื่อผู้ควบคุมยานพาหนะ / พนักงานขับ")
         
@@ -142,11 +159,10 @@ with tab_use:
                 else:
                     v_id = use_veh.split(" ")[0]
                     total = meter_end - meter_start
-                    thai_date = get_thai_date(use_date) # <--- แปลงเป็นวันที่ไทย
                     conn = sqlite3.connect('irrigation_fleet.db')
-                    conn.execute("INSERT INTO Usage_Logs (date, vehicle_id, driver, meter_start, meter_end, total, fuel_added) VALUES (?,?,?,?,?,?,?)", (thai_date, v_id, driver, meter_start, meter_end, total, fuel))
+                    conn.execute("INSERT INTO Usage_Logs (date, vehicle_id, driver, meter_start, meter_end, total, fuel_added) VALUES (?,?,?,?,?,?,?)", (use_date, v_id, driver, meter_start, meter_end, total, fuel))
                     conn.commit(); conn.close()
-                    st.success(f"✅ บันทึกสำเร็จ! วันที่ {thai_date} รวมระยะทาง/เวลา: {total} หน่วย")
+                    st.success(f"✅ บันทึกสำเร็จ! รวมระยะทาง/เวลา: {total} หน่วย")
 
 # --- แท็บซ่อมบำรุงและอุบัติเหตุ (แบบ 5, 6) ---
 with tab_mnt:
@@ -154,7 +170,10 @@ with tab_mnt:
     if mnt_type == "บันทึกประวัติซ่อมบำรุง (แบบ 6)":
         st.subheader("บันทึกประวัติซ่อมบำรุงยานพาหนะ (แบบ 6)")
         with st.form("form_mnt_6"):
-            m_date = st.date_input("วันตรวจรับ / วันที่เข้าซ่อม")
+            
+            # --- เปลี่ยนมาใช้ปฏิทินแบบไทย ---
+            m_date = thai_date_picker("วันตรวจรับ / วันที่เข้าซ่อม", key="mnt6")
+            
             m_veh = st.selectbox("เลือกยานพาหนะที่ซ่อม", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ")
             m_meter = st.number_input("เลขไมล์ / ชั่วโมง (ณ วันที่ซ่อม)", min_value=0.0)
             m_detail = st.text_area("รายละเอียดการซ่อมบำรุง")
@@ -162,16 +181,18 @@ with tab_mnt:
             
             if st.form_submit_button("บันทึกประวัติการซ่อม (แบบ 6)"):
                 if vehicle_list:
-                    thai_date = get_thai_date(m_date) # <--- แปลงเป็นวันที่ไทย
                     conn = sqlite3.connect('irrigation_fleet.db')
-                    conn.execute("INSERT INTO Maintenance_Logs (date, vehicle_id, meter, details, cost) VALUES (?,?,?,?,?)", (thai_date, m_veh.split(" ")[0], m_meter, m_detail, m_cost))
+                    conn.execute("INSERT INTO Maintenance_Logs (date, vehicle_id, meter, details, cost) VALUES (?,?,?,?,?)", (m_date, m_veh.split(" ")[0], m_meter, m_detail, m_cost))
                     conn.commit(); conn.close()
                     st.success("✅ บันทึกประวัติการซ่อมบำรุง สำเร็จ!")
                     
     else:
         st.subheader("แบบรายงานอุบัติเหตุ (แบบ 5)")
         with st.form("form_acc_5"):
-            a_date = st.date_input("วันที่เกิดเหตุ")
+            
+            # --- เปลี่ยนมาใช้ปฏิทินแบบไทย ---
+            a_date = thai_date_picker("วันที่เกิดเหตุ", key="acc5")
+            
             a_veh = st.selectbox("เลือกยานพาหนะที่เกิดเหตุ", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ")
             a_driver = st.text_input("ชื่อผู้ขับขี่ขณะเกิดเหตุ")
             a_loc = st.text_input("สถานที่เกิดเหตุ")
@@ -180,9 +201,8 @@ with tab_mnt:
             
             if st.form_submit_button("บันทึกรายงานอุบัติเหตุ (แบบ 5)"):
                 if vehicle_list:
-                    thai_date = get_thai_date(a_date) # <--- แปลงเป็นวันที่ไทย
                     conn = sqlite3.connect('irrigation_fleet.db')
-                    conn.execute("INSERT INTO Accident_Logs (date, vehicle_id, driver, location, details, damage) VALUES (?,?,?,?,?,?)", (thai_date, a_veh.split(" ")[0], a_driver, a_loc, a_detail, a_damage))
+                    conn.execute("INSERT INTO Accident_Logs (date, vehicle_id, driver, location, details, damage) VALUES (?,?,?,?,?,?)", (a_date, a_veh.split(" ")[0], a_driver, a_loc, a_detail, a_damage))
                     conn.commit(); conn.close()
                     st.success("✅ บันทึกรายงานอุบัติเหตุ สำเร็จ!")
 
@@ -190,7 +210,10 @@ with tab_mnt:
 with tab_pol:
     st.subheader("แบบรายงานการตรวจวัดมลพิษทางอากาศและเสียง (แบบ 9)")
     with st.form("form_pol_9"):
-        p_date = st.date_input("วันที่ตรวจสภาพ")
+        
+        # --- เปลี่ยนมาใช้ปฏิทินแบบไทย ---
+        p_date = thai_date_picker("วันที่ตรวจสภาพ", key="pol9")
+        
         p_veh = st.selectbox("เลือกยานพาหนะที่ตรวจ", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ")
         col1, col2, col3 = st.columns(3)
         with col1: p_co = st.number_input("ค่า CO (%)", min_value=0.0)
@@ -200,9 +223,8 @@ with tab_pol:
         
         if st.form_submit_button("บันทึกข้อมูลการตรวจวัด (แบบ 9)"):
             if vehicle_list:
-                thai_date = get_thai_date(p_date) # <--- แปลงเป็นวันที่ไทย
                 conn = sqlite3.connect('irrigation_fleet.db')
-                conn.execute("INSERT INTO Pollution_Logs (date, vehicle_id, co_percent, black_smoke, noise_db, result) VALUES (?,?,?,?,?,?)", (thai_date, p_veh.split(" ")[0], p_co, p_smoke, p_noise, p_res))
+                conn.execute("INSERT INTO Pollution_Logs (date, vehicle_id, co_percent, black_smoke, noise_db, result) VALUES (?,?,?,?,?,?)", (p_date, p_veh.split(" ")[0], p_co, p_smoke, p_noise, p_res))
                 conn.commit(); conn.close()
                 st.success("✅ บันทึกแบบรายงานการตรวจวัดมลพิษ สำเร็จ!")
 
