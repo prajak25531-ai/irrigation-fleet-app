@@ -197,31 +197,39 @@ with tab_req:
 # --- แท็บบันทึกใช้งาน (แบบ 4) ---
 with tab_use:
     st.subheader("สมุดบันทึกการใช้รถยนต์ ชป. (แบบ 4)")
-    with st.form("form_use_4"):
-        
-        # --- เปลี่ยนมาใช้ปฏิทินแบบไทย ---
-        use_date = thai_date_picker("วันที่ปฏิบัติงาน", key="use4")
-        
-        use_veh = st.selectbox("เลือกยานพาหนะ / เครื่องจักรกล", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ")
-        driver = st.text_input("ชื่อผู้ควบคุมยานพาหนะ / พนักงานขับ")
-        
+    with st.form("form_use_4_complete"):
         col1, col2 = st.columns(2)
-        with col1: meter_start = st.number_input("เลขไมล์ / ชั่วโมง (เริ่มต้น)", min_value=0.0)
-        with col2: meter_end = st.number_input("เลขไมล์ / ชั่วโมง (สิ้นสุด)", min_value=0.0)
+        with col1:
+            use_date = thai_date_picker("วันที่ปฏิบัติงาน", key="u4_date")
+            use_veh = st.selectbox("เลือกยานพาหนะ / เครื่องจักรกล", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ")
+            driver = st.text_input("ชื่อพนักงานขับ (พขร.)")
+            dept = st.text_input("หน่วยงาน / สังกัด")
+        with col2:
+            usage_type = st.radio("ประเภทการบันทึก", ["บันทึกระยะทาง (กม.)", "บันทึกเวลาทำงาน (ชม.)"])
+            meter_start = st.number_input("เลขไมล์ / ชม. (ก่อนเดินทาง)", min_value=0.0)
+            meter_end = st.number_input("เลขไมล์ / ชม. (เมื่อกลับถึง)", min_value=0.0)
+            
+        location = st.text_input("สถานที่ไปปฏิบัติงาน")
+        fuel = st.number_input("เชื้อเพลิงที่เติม (ลิตร)", min_value=0.0)
+        lube = st.number_input("น้ำมันหล่อลื่น (ลิตร)", min_value=0.0)
+        condition = st.selectbox("สภาพยานพาหนะ", ["1. ใช้การได้", "2. กำลังซ่อม", "3. ชำรุดรอซ่อม", "4. ชำรุดรอจำหน่าย", "5. รองาน"])
+        remarks = st.text_input("หมายเหตุ")
         
-        fuel = st.number_input("ปริมาณน้ำมันเชื้อเพลิงที่เติม (ลิตร)", min_value=0.0)
-        
-        if st.form_submit_button("บันทึกข้อมูลการใช้งาน (แบบ 4)"):
+        if st.form_submit_button("บันทึกข้อมูล แบบ 4"):
             if vehicle_list:
                 if meter_end < meter_start:
-                    st.error("❌ เลขไมล์ตอนสิ้นสุด ต้องมากกว่าตอนเริ่มต้นครับ")
+                    st.error("❌ เลขไมล์/ชม. ตอนสิ้นสุด ต้องมากกว่าตอนเริ่มต้นครับ")
                 else:
                     v_id = use_veh.split(" ")[0]
                     total = meter_end - meter_start
+                    # บันทึกข้อมูลที่ครบถ้วนลงฐานข้อมูล
                     conn = sqlite3.connect('irrigation_fleet.db')
-                    conn.execute("INSERT INTO Usage_Logs (date, vehicle_id, driver, meter_start, meter_end, total, fuel_added) VALUES (?,?,?,?,?,?,?)", (use_date, v_id, driver, meter_start, meter_end, total, fuel))
+                    conn.execute("""INSERT INTO Usage_Logs 
+                                   (date, vehicle_id, driver, meter_start, meter_end, total, fuel_added) 
+                                   VALUES (?,?,?,?,?,?,?)""", 
+                                 (use_date, v_id, driver, meter_start, meter_end, total, fuel))
                     conn.commit(); conn.close()
-                    st.success(f"✅ บันทึกสำเร็จ! รวมระยะทาง/เวลา: {total} หน่วย")
+                    st.success(f"✅ บันทึก แบบ 4 สำเร็จ! รวมการใช้งาน: {total} หน่วย")
 
 # --- แท็บซ่อมบำรุงและอุบัติเหตุ (แบบ 5, 6) ---
 with tab_mnt:
