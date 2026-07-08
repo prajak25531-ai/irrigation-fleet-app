@@ -4,380 +4,295 @@ import pandas as pd
 from datetime import datetime
 
 # ==========================================
-# 1. โครงสร้างฐานข้อมูลหลัก
+# 1. การตั้งค่าหน้าจอและฟังก์ชันการพิมพ์
+# ==========================================
+st.set_page_config(layout="wide", page_title="ระบบบริหารจัดการยานพาหนะ ชป.")
+
+# CSS สำหรับซ่อนเมนูและปุ่มตอนสั่งพิมพ์
+st.markdown("""
+    <style>
+    @media print {
+        .stButton, .stSidebar, header, footer, .stTabs [data-baseweb="tab-list"] { display: none !important; }
+        .st-emotion-cache-1y4p8pa { padding-top: 0rem; }
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+def print_document():
+    if st.button("🖨️ สั่งพิมพ์เอกสารหน้านี้"):
+        st.markdown("<script>window.print();</script>", unsafe_allow_html=True)
+        st.info("💡 หากตารางยาว ให้ตั้งค่า Layout เป็น Landscape (แนวนอน) ในหน้าต่างพิมพ์")
+
+# ==========================================
+# 2. โครงสร้างฐานข้อมูล (ครอบคลุมทุกช่อง)
 # ==========================================
 def init_db():
     conn = sqlite3.connect('irrigation_fleet.db')
-    conn.execute('''CREATE TABLE IF NOT EXISTS Vehicles (vehicle_id TEXT PRIMARY KEY, vehicle_category TEXT, vehicle_type TEXT, consumption_rate REAL)''')
-    conn.execute('''CREATE TABLE IF NOT EXISTS Vehicle_Requests (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, name TEXT, vehicle_id TEXT, destination TEXT, purpose TEXT)''')
-    conn.execute('''CREATE TABLE IF NOT EXISTS Personal_Car_Requests (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, name TEXT, car_info TEXT, destination TEXT, purpose TEXT)''')
-    conn.execute('''CREATE TABLE IF NOT EXISTS Usage_Logs (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, vehicle_id TEXT, driver TEXT, meter_start REAL, meter_end REAL, total REAL, fuel_added REAL)''')
-    conn.execute('''CREATE TABLE IF NOT EXISTS Accident_Logs (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, vehicle_id TEXT, driver TEXT, location TEXT, details TEXT, damage TEXT)''')
-    conn.execute('''CREATE TABLE IF NOT EXISTS Maintenance_Logs (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, vehicle_id TEXT, meter REAL, details TEXT, cost REAL)''')
-    conn.execute('''CREATE TABLE IF NOT EXISTS Pollution_Logs (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, vehicle_id TEXT, co_percent REAL, black_smoke REAL, noise_db REAL, result TEXT)''')
+    c = conn.cursor()
+    # ตารางทะเบียนรถ (แบบ 1, 2, 7)
+    c.execute('''CREATE TABLE IF NOT EXISTS Vehicles 
+                 (v_id TEXT PRIMARY KEY, form_type TEXT, name TEXT, type TEXT, year TEXT, cc INTEGER, 
+                  plate TEXT, position TEXT, price REAL, buy_year TEXT, buy_date TEXT, 
+                  sell_date TEXT, fuel_type TEXT, rate REAL, remark TEXT)''')
+    # ตารางขออนุญาต (แบบ 3, 10)
+    c.execute('''CREATE TABLE IF NOT EXISTS Requests 
+                 (req_id INTEGER PRIMARY KEY AUTOINCREMENT, form_type TEXT, req_date TEXT, dept TEXT, 
+                  name TEXT, position TEXT, vehicle TEXT, passengers INTEGER, tel TEXT, 
+                  destination TEXT, purpose TEXT, start_datetime TEXT, end_datetime TEXT)''')
+    # ตารางการใช้งาน (แบบ 4)
+    c.execute('''CREATE TABLE IF NOT EXISTS Usage 
+                 (u_id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, vehicle TEXT, driver TEXT, 
+                  dept TEXT, m_start REAL, m_end REAL, total REAL, fuel REAL, lube REAL, cond TEXT, remark TEXT)''')
+    # ตารางอุบัติเหตุและซ่อมบำรุง (แบบ 5, 6)
+    c.execute('''CREATE TABLE IF NOT EXISTS Maintenance 
+                 (m_id INTEGER PRIMARY KEY AUTOINCREMENT, form_type TEXT, date TEXT, vehicle TEXT, 
+                  meter REAL, driver TEXT, location TEXT, details TEXT, damage TEXT, cost REAL)''')
+    # ตารางมลพิษ (แบบ 9)
+    c.execute('''CREATE TABLE IF NOT EXISTS Pollution 
+                 (p_id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, vehicle TEXT, co REAL, smoke REAL, noise REAL, result TEXT)''')
     conn.commit()
     conn.close()
 
 init_db()
 
-def get_options(query, column):
+# ฟังก์ชันดึงรายชื่อรถ
+def get_vehicles():
     conn = sqlite3.connect('irrigation_fleet.db')
-    df = pd.read_sql_query(query, conn)
+    df = pd.read_sql_query("SELECT v_id, name, plate FROM Vehicles", conn)
     conn.close()
-    return df[column].tolist()
+    return [f"{row['v_id']} ({row['plate']})" for index, row in df.iterrows()]
+
+v_list = get_vehicles()
+default_dept = "โครงการส่งน้ำและบำรุงรักษาระโนด-กระแสสินธุ์"
 
 # ==========================================
-# ฟังก์ชันพิเศษ: สร้างกล่องเลือกวันที่แบบไทย (วัน/เดือน/ปี พ.ศ.)
+# 3. หน้าจอหลักและการแบ่งแท็บ
 # ==========================================
-def thai_date_picker(label, key):
-    st.markdown(f"**{label}**")
-    cols = st.columns([1, 1, 1]) # แบ่งเป็น 3 ช่องเท่าๆ กัน
-    today = datetime.today()
-    months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."]
+st.title("🚜 ระบบบริหารจัดการยานพาหนะและเครื่องจักรกล")
+tabs = st.tabs(["⚙️ ทะเบียนรถ (แบบ 1,2,7)", "📝 ขอใช้รถ (แบบ 3,10)", "📍 บันทึกใช้ (แบบ 4)", "🛠️ ซ่อม/อุบัติเหตุ (แบบ 5,6)", "💨 ตรวจมลพิษ (แบบ 9)", "📊 รายงานสรุป (แบบ 8)"])
+
+# ------------------------------------------
+# แท็บ 1: ทะเบียนรถ (แบบ 1, 2, 7)
+# ------------------------------------------
+with tabs[0]:
+    st.subheader("บัญชีรายการประเภทยานพาหนะ และ เกณฑ์สิ้นเปลือง")
+    v_form_type = st.radio("เลือกแบบฟอร์มทะเบียน", ["แบบ 1 (รถประจำตำแหน่ง)", "แบบ 2 (รถส่วนกลาง)"])
     
-    with cols[0]:
-        day = st.selectbox("วัน", range(1, 32), index=today.day-1, key=f"day_{key}")
-    with cols[1]:
-        month = st.selectbox("เดือน", months, index=today.month-1, key=f"month_{key}")
-    with cols[2]:
-        current_year_be = today.year + 543
-        # ให้เลือกย้อนหลังและล่วงหน้าได้ 5 ปี
-        years = list(range(current_year_be - 5, current_year_be + 6))
-        year = st.selectbox("ปี พ.ศ.", years, index=5, key=f"year_{key}")
+    with st.form("vehicle_form"):
+        st.markdown("**ข้อมูลพื้นฐานยานพาหนะ**")
+        c1, c2, c3 = st.columns(3)
+        v_id = c1.text_input("หมายเลข ชป. (รหัสหลัก)")
+        v_plate = c2.text_input("หมายเลขทะเบียน")
+        v_name = c3.text_input("ชื่อของรถ")
         
-    return f"{day} {month} {year}"
-
-# ==========================================
-# 2. ส่วนหน้าจอแอปพลิเคชัน
-# ==========================================
-st.set_page_config(page_title="ระบบยานพาหนะ ชป.", layout="wide")
-st.title("🚜 ระบบบริหารจัดการเครื่องจักรกลและยานพาหนะ ชป.")
-st.markdown("อ้างอิงตามระเบียบยานพาหนะ กรมชลประทาน (ครอบคลุม 10 แบบฟอร์ม)")
-
-vehicle_list = get_options("SELECT vehicle_id || ' (' || vehicle_type || ')' as v_info FROM Vehicles", "v_info")
-
-tab_req, tab_use, tab_mnt, tab_pol, tab_rep, tab_set = st.tabs([
-    "📝 ขออนุญาตใช้รถ (แบบ 3,10)", 
-    "📍 บันทึกการใช้งาน (แบบ 4)", 
-    "🛠️ ซ่อมบำรุง/อุบัติเหตุ (แบบ 5,6)", 
-    "💨 ตรวจวัดมลพิษ (แบบ 9)", 
-    "📊 รายงานสรุป (แบบ 8)", 
-    "⚙️ ตั้งค่าระบบ (แบบ 1,2,7)"
-])
-
-# --- แท็บตั้งค่า (แบบ 1, 2, 7) ---
-# --- แก้ไขแท็บตั้งค่า (แบบ 2) ให้มีช่องกรอกครบตามฟอร์ม ---
-with tab_set:
-    st.subheader("บัญชีรายการประเภทยานพาหนะส่วนกลาง (แบบ 2)")
-    with st.form("add_vehicle_form_v2"):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            v_id = st.text_input("หมายเลข ชป.")
-            v_plate = st.text_input("หมายเลขทะเบียน")
-            v_type = st.text_input("ชื่อยานพาหนะ")
-        with col2:
-            v_category = st.text_input("ประเภทยานพาหนะ")
-            v_model = st.text_input("รุ่นปี")
-            v_cc = st.number_input("ขนาด (ซีซี)", min_value=0)
-            v_dept = st.text_input("รหัสสังกัด")
-        with col3:
-            v_price = st.number_input("ราคา", min_value=0.0)
-            v_buy_year = st.text_input("ปีที่ซื้อ")
-            v_acquire = st.text_input("หลักฐานการได้มา (วดป./เลขโอน)")
-            v_dispose = st.text_input("หลักฐานการจำหน่าย (ถ้ามี)")
-
-        if st.form_submit_button("บันทึกข้อมูลแบบ 2"):
-            conn = sqlite3.connect('irrigation_fleet.db')
-            # เพิ่มตารางนี้ใน init_db ด้วยนะครับถ้ายังไม่มี
-            conn.execute('''CREATE TABLE IF NOT EXISTS Vehicles_V2 
-                           (id INTEGER PRIMARY KEY, v_id TEXT, v_plate TEXT, v_type TEXT, 
-                            v_cat TEXT, v_model TEXT, v_cc INTEGER, v_dept TEXT, 
-                            v_price REAL, v_buy_year TEXT, v_acquire TEXT, v_dispose TEXT)''')
-            conn.execute("INSERT INTO Vehicles_V2 (v_id, v_plate, v_type, v_cat, v_model, v_cc, v_dept, v_price, v_buy_year, v_acquire, v_dispose) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                         (v_id, v_plate, v_type, v_category, v_model, v_cc, v_dept, v_price, v_buy_year, v_acquire, v_dispose))
-            conn.commit(); conn.close()
-            st.success("บันทึกข้อมูลแบบ 2 ครบถ้วนแล้วครับ")
-    
-    # ปุ่มสำหรับสั่งพิมพ์ (เปิดหน้าต่างพิมพ์)
-    if st.button("พิมพ์รายงานแบบ 2"):
-        st.write("ระบบกำลังเตรียมหน้าฟอร์มสำหรับสั่งพิมพ์...")
-        st.markdown("""
-            <script>window.print();</script>
-        """, unsafe_allow_html=True)
-
-    st.subheader("➕ บัญชีรายการประเภทยานพาหนะ (แบบ 1, 2 และ 7)")
-    with st.form("add_vehicle"):
-        col1, col2 = st.columns(2)
-        with col1:
-            v_id = st.text_input("หมายเลข ชป. / หมายเลขทะเบียน")
-            v_cat = st.selectbox("หมวดหมู่รถ", ["ยานพาหนะส่วนกลาง (แบบ 2)", "รถประจำตำแหน่ง (แบบ 1)"])
-        with col2:
-            v_type = st.text_input("ประเภทรถ (เช่น รถขุดตีนตะขาบ, รถกระบะ, เครื่องสูบน้ำ)")
-            v_rate = st.number_input("เกณฑ์การใช้สิ้นเปลืองเชื้อเพลิง (กม./ลิตร หรือ ชม./ลิตร)", min_value=0.0)
-            
-        if st.form_submit_button("บันทึกข้อมูลยานพาหนะ"):
+        v_type = c1.text_input("แบบ / ประเภท")
+        v_year = c2.text_input("รุ่นปี")
+        v_cc = c3.number_input("ขนาด (ซีซี)", min_value=0)
+        
+        v_pos = c1.text_input("ประจำตำแหน่งใด / รหัสสังกัด")
+        v_price = c2.number_input("ราคา (บาท)", min_value=0.0)
+        v_buy_year = c3.text_input("ปีที่ซื้อ")
+        
+        v_buy_date = c1.text_input("วันได้มา (วันซื้อ/โอน)")
+        v_sell_date = c2.text_input("วันจำหน่าย (จ่าย/โอน)")
+        
+        st.markdown("**แบบ 7: กำหนดเกณฑ์สิ้นเปลือง**")
+        c4, c5 = st.columns(2)
+        v_fuel = c4.selectbox("ชนิดเชื้อเพลิง", ["ดีเซล", "เบนซิน", "ไฟฟ้า"])
+        v_rate = c5.number_input("เกณฑ์สิ้นเปลือง (กม. หรือ ชม./ลิตร)", min_value=0.0)
+        v_remark = st.text_input("หมายเหตุ")
+        
+        if st.form_submit_button("บันทึกข้อมูลรถ (แบบ 1, 2, 7)"):
             if v_id:
-                try:
-                    conn = sqlite3.connect('irrigation_fleet.db')
-                    conn.execute("INSERT INTO Vehicles VALUES (?, ?, ?, ?)", (v_id, v_cat, v_type, v_rate))
-                    conn.commit(); conn.close()
-                    st.success(f"✅ บันทึกข้อมูลรถ {v_id} สำเร็จ! กรุณารีเฟรชหน้าเว็บ 1 ครั้ง")
-                except sqlite3.IntegrityError:
-                    st.error("❌ หมายเลขยานพาหนะนี้มีอยู่ในระบบแล้วครับ")
-
+                conn = sqlite3.connect('irrigation_fleet.db')
+                conn.execute('''INSERT OR REPLACE INTO Vehicles 
+                                (v_id, form_type, name, type, year, cc, plate, position, price, buy_year, buy_date, sell_date, fuel_type, rate, remark) 
+                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', 
+                             (v_id, v_form_type, v_name, v_type, v_year, v_cc, v_plate, v_pos, v_price, v_buy_year, v_buy_date, v_sell_date, v_fuel, v_rate, v_remark))
+                conn.commit(); conn.close()
+                st.success("✅ บันทึกข้อมูลทะเบียนรถเรียบร้อย")
+            else:
+                st.error("กรุณากรอก หมายเลข ชป.")
+    
     st.markdown("---")
-    st.markdown("**ตารางบัญชียานพาหนะในระบบปัจจุบัน**")
+    st.markdown("##### 📄 ข้อมูลสำหรับสั่งพิมพ์บัญชีรายการรถ")
     conn = sqlite3.connect('irrigation_fleet.db')
-    df_vehicles = pd.read_sql_query("SELECT vehicle_id as หมายเลข_ชป, vehicle_category as หมวดหมู่, vehicle_type as ประเภท, consumption_rate as เกณฑ์สิ้นเปลือง FROM Vehicles", conn)
+    df_v = pd.read_sql_query("SELECT v_id as ชป, plate as ทะเบียน, name as ชื่อรถ, type as แบบ, cc as ซีซี, position as ตำแหน่ง_สังกัด, rate as เกณฑ์น้ำมัน FROM Vehicles", conn)
     conn.close()
-    st.dataframe(df_vehicles, use_container_width=True, hide_index=True)
+    st.dataframe(df_v, use_container_width=True, hide_index=True)
+    print_document()
 
-# --- แท็บขออนุญาต (แบบ 3, 10) ---
-with tab_req:
-    st.subheader("ใบขออนุญาตใช้ยานพาหนะส่วนกลาง (แบบ 3)")
-    with st.form("form_req_3_complete"):
-        col1, col2 = st.columns(2)
-        with col1:
-            req_date = thai_date_picker("วันที่ทำใบขออนุญาต", key="req3_date")
-            dept = st.text_input("หน่วยงาน / สังกัด")
-            req_name = st.text_input("ข้าพเจ้า (ชื่อ-นามสกุล)")
-            req_pos = st.text_input("ตำแหน่ง")
-        with col2:
-            req_veh = st.selectbox("ขอใช้ยานพาหนะประเภท (เลขหมาย ชป.)", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ")
-            req_passengers = st.number_input("จำนวนผู้โดยสาร (คน)", min_value=1)
-            req_tel = st.text_input("เบอร์โทรศัพท์ติดต่อ")
+# ------------------------------------------
+# แท็บ 2: ขอใช้รถ (แบบ 3, 10)
+# ------------------------------------------
+with tabs[1]:
+    req_type = st.radio("ประเภทใบขออนุญาต", ["แบบ 3 (รถส่วนกลาง)", "แบบ 10 (รถส่วนตัว)"])
+    st.subheader(f"ใบขออนุญาตใช้ยานพาหนะ ({req_type})")
+    
+    with st.form("req_form"):
+        c1, c2 = st.columns(2)
+        r_date = c1.date_input("วันที่ทำรายการ")
+        r_dept = c2.text_input("หน่วยงาน / สังกัด", value=default_dept)
+        r_name = c1.text_input("ชื่อ-นามสกุล ผู้ขอ")
+        r_pos = c2.text_input("ตำแหน่ง")
         
-        req_dest = st.text_input("ไปที่ไหน (สถานที่ปฏิบัติงาน)")
-        req_purpose = st.text_area("เพื่อวัตถุประสงค์ (ไปทำอะไร)")
-        
-        col_start, col_end = st.columns(2)
-        with col_start:
-            start_date = thai_date_picker("ตั้งแต่วันที่", key="req3_start")
-            start_time = st.time_input("เวลาที่เริ่มใช้")
-        with col_end:
-            end_date = thai_date_picker("ถึงวันที่", key="req3_end")
-            end_time = st.time_input("เวลาที่สิ้นสุด")
+        if req_type == "แบบ 3 (รถส่วนกลาง)":
+            r_veh = c1.selectbox("ขอใช้ยานพาหนะ (หมายเลข ชป.)", v_list) if v_list else c1.text_input("ระบุรถ")
+        else:
+            r_veh = c1.text_input("ข้อมูลรถส่วนตัว (ทะเบียน/ยี่ห้อ)")
             
-        req_pickup = st.text_input("สถานที่ให้ยานพาหนะไปรับ")
+        r_pass = c2.number_input("จำนวนผู้โดยสาร", min_value=1)
         
-        if st.form_submit_button("บันทึกใบขออนุญาต (แบบ 3)"):
-            if vehicle_list:
-                v_id = req_veh.split(" ")[0]
-                conn = sqlite3.connect('irrigation_fleet.db')
-                # บันทึกลงฐานข้อมูล (เพื่อให้พิมพ์รายงานได้ครบทุกช่อง)
-                conn.execute("""INSERT INTO Vehicle_Requests 
-                               (date, name, vehicle_id, destination, purpose) VALUES (?,?,?,?,?)""", 
-                               (req_date, req_name, v_id, req_dest, req_purpose))
-                conn.commit(); conn.close()
-                st.success("✅ บันทึกข้อมูลใบขออนุญาต (แบบ 3) ครบถ้วนแล้วครับ")
+        r_dest = st.text_input("สถานที่ไปปฏิบัติงาน / ไปที่ไหน")
+        r_purp = st.text_area("เพื่อวัตถุประสงค์")
+        
+        c3, c4 = st.columns(2)
+        r_start = c3.text_input("ตั้งแต่วันที่ และ เวลา")
+        r_end = c4.text_input("ถึงวันที่ และ เวลา")
+        r_tel = st.text_input("เบอร์โทรศัพท์ติดต่อ / สถานที่ให้ไปรับ")
+        
+        if st.form_submit_button("บันทึกใบขออนุญาต"):
+            conn = sqlite3.connect('irrigation_fleet.db')
+            conn.execute('''INSERT INTO Requests (form_type, req_date, dept, name, position, vehicle, passengers, tel, destination, purpose, start_datetime, end_datetime)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''', 
+                         (req_type, r_date.strftime("%Y-%m-%d"), r_dept, r_name, r_pos, str(r_veh), r_pass, r_tel, r_dest, r_purp, r_start, r_end))
+            conn.commit(); conn.close()
+            st.success("✅ บันทึกใบขออนุญาตเรียบร้อย")
+    print_document()
 
-    # ปุ่มสำหรับสั่งพิมพ์รายงานแบบ 3
-    if st.button("พิมพ์รายงานแบบ 3"):
-        st.info("ระบบกำลังดึงข้อมูลเพื่อแสดงผลหน้าสั่งพิมพ์ (Print View)...")
-        # ตรงนี้เราสามารถเขียนฟังก์ชันดึงข้อมูลล่าสุดมาแสดงในรูปแบบตาราง A4 ได้ครับ)
-                    
-    else:
-        st.subheader("ใบขออนุญาตใช้รถส่วนตัวเดินทางไปราชการ (แบบ 10)")
-        with st.form("form_req_10"):
-            req_name = st.text_input("ชื่อผู้ขออนุญาต")
-            car_info = st.text_input("ข้อมูลรถส่วนตัว (ยี่ห้อ / หมายเลขทะเบียน)")
-            
-            # --- เปลี่ยนมาใช้ปฏิทินแบบไทย ---
-            req_date = thai_date_picker("วันที่เดินทาง", key="req10")
-            
-            req_dest = st.text_input("สถานที่เดินทางไปราชการ")
-            req_purpose = st.text_area("เหตุผลความจำเป็น")
-            
-            if st.form_submit_button("บันทึกใบขออนุญาต (แบบ 10)"):
-                conn = sqlite3.connect('irrigation_fleet.db')
-                conn.execute("INSERT INTO Personal_Car_Requests (date, name, car_info, destination, purpose) VALUES (?,?,?,?,?)", (req_date, req_name, car_info, req_dest, req_purpose))
-                conn.commit(); conn.close()
-                st.success("✅ บันทึกใบขออนุญาตใช้รถส่วนตัว สำเร็จ!")
-
-# --- แท็บบันทึกใช้งาน (แบบ 4) ---
-with tab_use:
+# ------------------------------------------
+# แท็บ 3: บันทึกใช้งาน (แบบ 4)
+# ------------------------------------------
+with tabs[2]:
     st.subheader("สมุดบันทึกการใช้รถยนต์ ชป. (แบบ 4)")
-    with st.form("form_use_4_complete"):
-        col1, col2 = st.columns(2)
-        with col1:
-            use_date = thai_date_picker("วันที่ปฏิบัติงาน", key="u4_date")
-            use_veh = st.selectbox("เลือกยานพาหนะ / เครื่องจักรกล", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ")
-            driver = st.text_input("ชื่อพนักงานขับ (พขร.)")
-            dept = st.text_input("หน่วยงาน / สังกัด")
-        with col2:
-            usage_type = st.radio("ประเภทการบันทึก", ["บันทึกระยะทาง (กม.)", "บันทึกเวลาทำงาน (ชม.)"])
-            meter_start = st.number_input("เลขไมล์ / ชม. (ก่อนเดินทาง)", min_value=0.0)
-            meter_end = st.number_input("เลขไมล์ / ชม. (เมื่อกลับถึง)", min_value=0.0)
-            
-        location = st.text_input("สถานที่ไปปฏิบัติงาน")
-        fuel = st.number_input("เชื้อเพลิงที่เติม (ลิตร)", min_value=0.0)
-        lube = st.number_input("น้ำมันหล่อลื่น (ลิตร)", min_value=0.0)
-        condition = st.selectbox("สภาพยานพาหนะ", ["1. ใช้การได้", "2. กำลังซ่อม", "3. ชำรุดรอซ่อม", "4. ชำรุดรอจำหน่าย", "5. รองาน"])
-        remarks = st.text_input("หมายเหตุ")
+    with st.form("usage_form"):
+        c1, c2 = st.columns(2)
+        u_date = c1.date_input("วันที่ปฏิบัติงาน")
+        u_veh = c2.selectbox("หมายเลข ชป. / ทะเบียน", v_list) if v_list else c2.text_input("ระบุรถ")
+        u_driver = c1.text_input("ชื่อพนักงานขับ (พขร.)")
+        u_dept = c2.text_input("หน่วยงาน", value=default_dept)
         
-        if st.form_submit_button("บันทึกข้อมูล แบบ 4"):
-            if vehicle_list:
-                if meter_end < meter_start:
-                    st.error("❌ เลขไมล์/ชม. ตอนสิ้นสุด ต้องมากกว่าตอนเริ่มต้นครับ")
-                else:
-                    v_id = use_veh.split(" ")[0]
-                    total = meter_end - meter_start
-                    # บันทึกข้อมูลที่ครบถ้วนลงฐานข้อมูล
-                    conn = sqlite3.connect('irrigation_fleet.db')
-                    conn.execute("""INSERT INTO Usage_Logs 
-                                   (date, vehicle_id, driver, meter_start, meter_end, total, fuel_added) 
-                                   VALUES (?,?,?,?,?,?,?)""", 
-                                 (use_date, v_id, driver, meter_start, meter_end, total, fuel))
-                    conn.commit(); conn.close()
-                    st.success(f"✅ บันทึก แบบ 4 สำเร็จ! รวมการใช้งาน: {total} หน่วย")
-
-# --- แท็บซ่อมบำรุงและอุบัติเหตุ (แบบ 5, 6) ---
-with tab_mnt:
-    mnt_type = st.radio("เลือกประเภทการบันทึก", ["บันทึกประวัติซ่อมบำรุง (แบบ 6)", "รายงานอุบัติเหตุ (แบบ 5)"])
-    
-    if mnt_type == "บันทึกประวัติซ่อมบำรุง (แบบ 6)":
-        st.subheader("บันทึกประวัติการซ่อมบำรุงยานพาหนะ (แบบ 6)")
-        with st.form("form_mnt_6_complete"):
-            col1, col2 = st.columns(2)
-            with col1:
-                m_date = thai_date_picker("วันที่ซ่อม", key="m6_date")
-                m_veh = st.selectbox("เลือกยานพาหนะ / เครื่องจักร", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มีรถในระบบ")
-                m_meter = st.number_input("เลขไมล์ / ชั่วโมง (ณ วันที่ซ่อม)", min_value=0.0)
-            with col2:
-                m_shop = st.text_input("สถานที่ซ่อม / ชื่ออู่")
-                m_mechanic = st.text_input("ช่างผู้รับผิดชอบ / ผู้ควบคุมงาน")
-                m_cost = st.number_input("ค่าใช้จ่ายรวม (บาท)", min_value=0.0)
-            
-            m_detail = st.text_area("รายการซ่อมบำรุง (รายละเอียดอะไหล่/การเปลี่ยนถ่ายของเหลว)")
-            m_invoice = st.text_input("เลขที่ใบเสร็จ / เลขที่เอกสารอ้างอิง")
-            
-            if st.form_submit_button("บันทึกประวัติการซ่อม (แบบ 6)"):
-                if vehicle_list:
-                    # บันทึกลงฐานข้อมูล
-                    conn = sqlite3.connect('irrigation_fleet.db')
-                    conn.execute("""INSERT INTO Maintenance_Logs 
-                                   (date, vehicle_id, meter, details, cost) 
-                                   VALUES (?,?,?,?,?)""", 
-                                 (m_date, m_veh.split(" ")[0], m_meter, m_detail, m_cost))
-                    conn.commit(); conn.close()
-                    st.success("✅ บันทึกประวัติการซ่อมบำรุง (แบบ 6) เรียบร้อยแล้ว")
+        c3, c4, c5 = st.columns(3)
+        u_m1 = c3.number_input("เลขไมล์เริ่มต้น", min_value=0.0)
+        u_m2 = c4.number_input("เลขไมล์สิ้นสุด", min_value=0.0)
+        u_total = u_m2 - u_m1
+        c5.info(f"รวมระยะทาง: {u_total} หน่วย")
         
-    else:
-        st.subheader("แบบรายงานอุบัติเหตุ (แบบ 5)")
-        with st.form("form_acc_5_complete"):
-            col1, col2 = st.columns(2)
-            with col1:
-                a_date = thai_date_picker("วันที่เกิดเหตุ", key="acc5_date")
-                a_time = st.time_input("เวลาที่เกิดเหตุ (น.)")
-                a_veh = st.selectbox("ยานพาหนะที่เกิดเหตุ", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มีรถในระบบ")
-            with col2:
-                a_driver = st.text_input("ชื่อผู้ขับขี่")
-                a_license = st.text_input("เลขที่ใบอนุญาตขับขี่")
-                a_speed = st.number_input("ความเร็วขณะเกิดเหตุ (กม./ชม.)", min_value=0)
+        c6, c7 = st.columns(2)
+        u_fuel = c6.number_input("น้ำมันเชื้อเพลิงที่เติม (ลิตร)", min_value=0.0)
+        u_lube = c7.number_input("น้ำมันหล่อลื่นที่เติม (ลิตร)", min_value=0.0)
+        
+        u_cond = st.selectbox("สภาพยานพาหนะ", ["1.ใช้การได้", "2.กำลังซ่อม", "3.ชำรุดรอซ่อม", "4.ชำรุดรอจำหน่าย", "5.รองาน"])
+        u_remark = st.text_input("หมายเหตุ / สถานที่ไป")
+        
+        if st.form_submit_button("บันทึกการใช้งาน แบบ 4"):
+            conn = sqlite3.connect('irrigation_fleet.db')
+            conn.execute('''INSERT INTO Usage (date, vehicle, driver, dept, m_start, m_end, total, fuel, lube, cond, remark)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?)''', 
+                         (u_date.strftime("%Y-%m-%d"), str(u_veh), u_driver, u_dept, u_m1, u_m2, u_total, u_fuel, u_lube, u_cond, u_remark))
+            conn.commit(); conn.close()
+            st.success("✅ บันทึกสมุดการใช้งานเรียบร้อย")
             
-            a_loc = st.text_input("สถานที่เกิดเหตุ")
-            a_route = st.text_input("เส้นทาง (เดินทางจากไหน ไปไหน)")
-            
-            col3, col4 = st.columns(2)
-            with col3:
-                a_damage_self = st.text_area("ความเสียหายของรถ ชป.")
-                a_party = st.text_area("พาหนะหรือทรัพย์สินฝ่ายตรงข้าม")
-            with col4:
-                a_detail = st.text_area("ลักษณะการเกิดเหตุ / สาเหตุ")
-                a_injured = st.text_area("ข้อมูลผู้บาดเจ็บ (ชื่อ/ที่อยู่)")
-            
-            if st.form_submit_button("บันทึกรายงานอุบัติเหตุ (แบบ 5)"):
-                if vehicle_list:
-                    # บันทึกลงฐานข้อมูลให้ครบทุกช่อง
-                    conn = sqlite3.connect('irrigation_fleet.db')
-                    conn.execute("""INSERT INTO Accident_Logs 
-                                   (date, vehicle_id, driver, location, details, damage) 
-                                   VALUES (?,?,?,?,?,?)""", 
-                                 (a_date, a_veh.split(" ")[0], a_driver, a_loc, a_detail, a_damage_self))
-                    conn.commit(); conn.close()
-                    st.success("✅ บันทึกรายงานอุบัติเหตุ (แบบ 5) เรียบร้อยแล้วครับ")
-with tab_rep:
-    st.subheader("บันทึกผลการใช้ การซ่อมบำรุงและสภาพของยานพาหนะ (แบบ 8)")
-    
-    # ส่วนสำหรับเลือกเดือน/ปี ที่ต้องการพิมพ์
-    col_p1, col_p2 = st.columns(2)
-    with col_p1:
-        rep_month = st.selectbox("เลือกเดือน", ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."])
-    with col_p2:
-        rep_year = st.text_input("พ.ศ.", value="2569")
-
+    st.markdown("---")
+    st.markdown("##### 📄 ประวัติการใช้งาน (สำหรับพิมพ์ แบบ 4)")
     conn = sqlite3.connect('irrigation_fleet.db')
+    df_u = pd.read_sql_query("SELECT date as วันที่, driver as พนักงานขับ, m_start as ไมล์เริ่ม, m_end as ไมล์จบ, total as ระยะรวม, fuel as เชื้อเพลิง, cond as สภาพรถ FROM Usage ORDER BY u_id DESC LIMIT 30", conn)
+    conn.close()
+    st.dataframe(df_u, use_container_width=True, hide_index=True)
+    print_document()
+
+# ------------------------------------------
+# แท็บ 4: ซ่อมบำรุงและอุบัติเหตุ (แบบ 5, 6)
+# ------------------------------------------
+with tabs[3]:
+    m_type = st.radio("เลือกประเภทรายงาน", ["แบบ 6 (ประวัติซ่อมบำรุง)", "แบบ 5 (รายงานอุบัติเหตุ)"])
+    st.subheader(f"บันทึกข้อมูล {m_type}")
     
-    # Query ดึงข้อมูลมาแสดงตามฟอร์มแบบ 8
-    # รวมข้อมูลจากตารางการใช้งาน และการซ่อมบำรุง
+    with st.form("maint_form"):
+        c1, c2 = st.columns(2)
+        m_date = c1.date_input("วันที่ (ซ่อม/เกิดเหตุ)")
+        m_veh = c2.selectbox("หมายเลข ชป.", v_list) if v_list else c2.text_input("ระบุรถ")
+        
+        if m_type == "แบบ 6 (ประวัติซ่อมบำรุง)":
+            m_meter = c1.number_input("เลขไมล์ ณ วันที่ซ่อม", min_value=0.0)
+            m_loc = c2.text_input("ชื่ออู่ / สถานที่ซ่อม")
+            m_driver = c1.text_input("ช่างผู้ซ่อม / ผู้ควบคุมงาน")
+            m_cost = c2.number_input("ค่าซ่อมบำรุงรวม (บาท)", min_value=0.0)
+            m_detail = st.text_area("รายการอะไหล่ที่เปลี่ยน / การซ่อมบำรุง")
+            m_damage = ""
+        else:
+            m_meter = 0.0
+            m_driver = c1.text_input("ชื่อผู้ขับขี่ขณะเกิดเหตุ")
+            m_loc = c2.text_input("สถานที่เกิดเหตุ")
+            m_detail = st.text_area("ลักษณะการเกิดเหตุ / สาเหตุ")
+            m_damage = st.text_area("ความเสียหาย (รถ ชป. และ คู่กรณี)")
+            m_cost = 0.0
+
+        if st.form_submit_button(f"บันทึกข้อมูล {m_type}"):
+            conn = sqlite3.connect('irrigation_fleet.db')
+            conn.execute('''INSERT INTO Maintenance (form_type, date, vehicle, meter, driver, location, details, damage, cost)
+                            VALUES (?,?,?,?,?,?,?,?,?)''', 
+                         (m_type, m_date.strftime("%Y-%m-%d"), str(m_veh), m_meter, m_driver, m_loc, m_detail, m_damage, m_cost))
+            conn.commit(); conn.close()
+            st.success(f"✅ บันทึก {m_type} เรียบร้อย")
+    print_document()
+
+# ------------------------------------------
+# แท็บ 5: ตรวจมลพิษ (แบบ 9)
+# ------------------------------------------
+with tabs[4]:
+    st.subheader("แบบรายงานการตรวจวัดมลพิษทางอากาศและเสียง (แบบ 9)")
+    with st.form("pol_form"):
+        c1, c2 = st.columns(2)
+        p_date = c1.date_input("วันที่ตรวจสภาพ")
+        p_veh = c2.selectbox("หมายเลข ชป.", v_list) if v_list else c2.text_input("ระบุรถ")
+        
+        c3, c4, c5 = st.columns(3)
+        p_co = c3.number_input("ค่า CO (%)", min_value=0.0)
+        p_smoke = c4.number_input("ค่าควันดำ (%)", min_value=0.0)
+        p_noise = c5.number_input("ระดับเสียง (dBA)", min_value=0.0)
+        
+        p_res = st.selectbox("ผลการตรวจสภาพ", ["1. ผ่าน", "2. ไม่ผ่าน"])
+        
+        if st.form_submit_button("บันทึกข้อมูล แบบ 9"):
+            conn = sqlite3.connect('irrigation_fleet.db')
+            conn.execute('''INSERT INTO Pollution (date, vehicle, co, smoke, noise, result)
+                            VALUES (?,?,?,?,?,?)''', (p_date.strftime("%Y-%m-%d"), str(p_veh), p_co, p_smoke, p_noise, p_res))
+            conn.commit(); conn.close()
+            st.success("✅ บันทึก แบบ 9 เรียบร้อย")
+    print_document()
+
+# ------------------------------------------
+# แท็บ 6: รายงานสรุป (แบบ 8)
+# ------------------------------------------
+with tabs[5]:
+    st.subheader("บันทึกผลการใช้ การซ่อมบำรุงและสภาพของยานพาหนะ (แบบ 8)")
+    st.markdown("ระบบจะประมวลผลดึงข้อมูลจาก แบบ 4 (การใช้งาน) และ แบบ 6 (การซ่อมบำรุง) มารวมให้โดยอัตโนมัติ")
+    
+    conn = sqlite3.connect('irrigation_fleet.db')
+    # Query ที่เชื่อมโยงข้อมูลรถ การใช้งาน และการซ่อมเข้าด้วยกัน
     query = '''
         SELECT 
-            u.vehicle_id as เลขหมาย, 
-            v.vehicle_type as ชื่อรถ, 
-            v.vehicle_category as ประเภท, 
-            u.total as รวมระยะทาง_หรือเวลา, 
-            u.fuel_added as เชื้อเพลิง_ดีเซล,
-            m.cost as ค่าซ่อมบำรุง,
-            "1.ใช้การได้" as สภาพรถ
-        FROM Usage_Logs u 
-        LEFT JOIN Vehicles v ON u.vehicle_id = v.vehicle_id
-        LEFT JOIN Maintenance_Logs m ON u.vehicle_id = m.vehicle_id
+            v.v_id as หมายเลข_ชป,
+            v.plate as ทะเบียน,
+            v.name as ชื่อรถ,
+            v.type as ประเภท,
+            COALESCE(SUM(u.total), 0) as รวมระยะทาง_เวลา,
+            COALESCE(SUM(u.fuel), 0) as ใช้น้ำมัน_ลิตร,
+            COALESCE(SUM(m.cost), 0) as ค่าซ่อมบำรุง,
+            MAX(u.cond) as สภาพรถล่าสุด
+        FROM Vehicles v
+        LEFT JOIN Usage u ON v.v_id = SUBSTR(u.vehicle, 1, INSTR(u.vehicle, ' ')-1) 
+             OR v.v_id = u.vehicle
+        LEFT JOIN Maintenance m ON v.v_id = SUBSTR(m.vehicle, 1, INSTR(m.vehicle, ' ')-1) 
+             OR v.v_id = m.vehicle AND m.form_type = 'แบบ 6 (ประวัติซ่อมบำรุง)'
+        GROUP BY v.v_id
     '''
-    df_report = pd.read_sql_query(query, conn)
+    try:
+        df_summary = pd.read_sql_query(query, conn)
+        st.dataframe(df_summary, use_container_width=True, hide_index=True)
+    except Exception as e:
+        st.info("กรุณาบันทึกข้อมูลรถ (แบบ 1,2) และการใช้งานก่อน ระบบจึงจะแสดงรายงานได้ครับ")
     conn.close()
-
-    if not df_report.empty:
-        st.dataframe(df_report, use_container_width=True)
-        
-        # ฟังก์ชันสั่งพิมพ์เฉพาะส่วนตาราง
-        if st.button("🖨️ สั่งพิมพ์รายงานแบบ 8"):
-            st.markdown("""
-                <script>
-                // ซ่อนปุ่มและเมนู Streamlit ก่อนพิมพ์
-                window.print();
-                </script>
-            """, unsafe_allow_html=True)
-            st.info("ระบบเปิดหน้าต่างพิมพ์แล้ว หากไม่แสดงผลกรุณาตรวจสอบการตั้งค่าเบราว์เซอร์")
-    else:
-        st.info("ยังไม่มีข้อมูลสำหรับออกรายงาน")                    
-
-# --- แท็บตรวจมลพิษ (แบบ 9) ---
-with tab_pol:
-    st.subheader("แบบรายงานการตรวจวัดมลพิษทางอากาศและเสียง (แบบ 9)")
-    with st.form("form_pol_9"):
-        
-        # --- เปลี่ยนมาใช้ปฏิทินแบบไทย ---
-        p_date = thai_date_picker("วันที่ตรวจสภาพ", key="pol9")
-        
-        p_veh = st.selectbox("เลือกยานพาหนะที่ตรวจ", vehicle_list) if vehicle_list else st.warning("⚠️ ยังไม่มียานพาหนะในระบบ")
-        col1, col2, col3 = st.columns(3)
-        with col1: p_co = st.number_input("ค่า CO (%)", min_value=0.0)
-        with col2: p_smoke = st.number_input("ค่าควันดำ (%)", min_value=0.0)
-        with col3: p_noise = st.number_input("ระดับเสียง (dBA)", min_value=0.0)
-        p_res = st.selectbox("ผลการตรวจสภาพ", ["๑. ผ่าน", "๒. ไม่ผ่าน"])
-        
-        if st.form_submit_button("บันทึกข้อมูลการตรวจวัด (แบบ 9)"):
-            if vehicle_list:
-                conn = sqlite3.connect('irrigation_fleet.db')
-                conn.execute("INSERT INTO Pollution_Logs (date, vehicle_id, co_percent, black_smoke, noise_db, result) VALUES (?,?,?,?,?,?)", (p_date, p_veh.split(" ")[0], p_co, p_smoke, p_noise, p_res))
-                conn.commit(); conn.close()
-                st.success("✅ บันทึกแบบรายงานการตรวจวัดมลพิษ สำเร็จ!")
-
-# --- แท็บรายงานสรุป (แบบ 8) ---
-with tab_rep:
-    st.subheader("บันทึกผลการใช้ การซ่อมบำรุงและสภาพของยานพาหนะ (แบบ 8)")
-    conn = sqlite3.connect('irrigation_fleet.db')
     
-    df_logs = pd.read_sql_query('''
-        SELECT u.date as วันที่, u.vehicle_id as หมายเลข_ชป, v.vehicle_type as ประเภท, 
-               u.driver as ผู้ควบคุม, u.total as ระยะทางหรือเวลา, u.fuel_added as เชื้อเพลิง_ลิตร
-        FROM Usage_Logs u LEFT JOIN Vehicles v ON u.vehicle_id = v.vehicle_id
-        ORDER BY u.id DESC LIMIT 100
-    ''', conn)
-    
-    if not df_logs.empty:
-        st.dataframe(df_logs, use_container_width=True, hide_index=True)
-    else:
-        st.info("ยังไม่มีข้อมูลการใช้งานในระบบ")
-        
-    conn.close()
+    print_document()
